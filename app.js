@@ -1,24 +1,43 @@
-/* LegalFlow × נבו, עמוד אוטומציות: גלילה, כפתור קבוע, ולידציה, ארבעת מצבי הטופס, פרמטרי מקור */
+/* LegalFlow × Smart Scale, דף הנחיתה המשותף: הסרטון, אנימציות בגלילה, כפתור קבוע, ולידציה, ארבעת מצבי הטופס, פרמטרי מקור */
 (function () {
   'use strict';
 
-  // קישור התזמון של Google Calendar (שיחה של 20 דקות ב-Google Meet). ריק = מוצג מקום שמור
+  // ה-VSL (לאורך, 9:16) והכתוביות שלו. ריק = מוצג מקום שמור
+  var VSL_SRC = '';
+  var VSL_CAPTIONS = '';
+
+  // הקישור של איליה לקביעת שיחה של 20 דקות. ריק = מוצג מקום שמור
   var BOOKING_URL = '';
 
-  // רז מחבר כאן את השליחה לשרת שלו. מקבל אובייקט שדות ומחזיר Promise.
-  // ברירת המחדל (תצוגה בלבד): מצליחה אחרי רגע. ?demo=error מדגים את מצב השגיאה
+  // הכתובת הייעודית לדף הזה ב-CRM של איליה: כל ליד ממנה נרשם תחת רז ברכה.
+  // ריק = מצב תצוגה: השליחה מצליחה אחרי רגע, ו-?demo=error מדגים שגיאה
+  var LEAD_WEBHOOK = '';
+  var PARTNER = { name: 'רז ברכה', crmId: 'mrj7pl1a7bls' };
+
   window.LeadFlow = window.LeadFlow || {};
   if (typeof window.LeadFlow.submit !== 'function') {
-    window.LeadFlow.submit = function () {
-      var fail = /[?&]demo=error/.test(location.search);
-      return new Promise(function (resolve, reject) {
-        setTimeout(function () { fail ? reject(new Error('demo')) : resolve(); }, 900);
+    window.LeadFlow.submit = function (data) {
+      if (!LEAD_WEBHOOK) {
+        var fail = /[?&]demo=error/.test(location.search);
+        return new Promise(function (resolve, reject) {
+          setTimeout(function () { fail ? reject(new Error('demo')) : resolve(); }, 900);
+        });
+      }
+      data.source = 'legalflow-smartscale';
+      data.partner = PARTNER.name;
+      data.partnerId = PARTNER.crmId;
+      return fetch(LEAD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).then(function (r) {
+        if (!r.ok) throw new Error('http ' + r.status);
       });
     };
   }
 
-  var PARAMS = ['src', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
-  var STORE_KEY = 'lf-automations-src';
+  var PARAMS = ['src', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid'];
+  var STORE_KEY = 'lf-ss-src';
 
   function readStore() {
     try { return JSON.parse(sessionStorage.getItem(STORE_KEY) || '{}'); } catch (e) { return {}; }
@@ -43,17 +62,17 @@
     });
   }
 
-  // כפתור קבוע: נעלם כשהטופס על המסך
+  // כפתור קבוע: נעלם כשהטופס או כפתור אחר של הדף על המסך, כדי שלא יופיעו שניים
   function stickyCta() {
     var btn = document.getElementById('sticky-cta');
-    var lead = document.getElementById('lead');
-    var hero = document.querySelector('.hero-cta');
-    if (!btn || !lead || !('IntersectionObserver' in window)) return;
-    var leadVisible = false, heroVisible = true;
-    function update() { btn.classList.toggle('is-hidden', leadVisible || heroVisible); }
-    new IntersectionObserver(function (e) { leadVisible = e[0].isIntersecting; update(); }, { threshold: 0.05 }).observe(lead);
-    if (hero) new IntersectionObserver(function (e) { heroVisible = e[0].isIntersecting; update(); }).observe(hero);
-    update();
+    var watch = document.querySelectorAll('#lead, .hero-cta, .cta-block');
+    if (!btn || !watch.length || !('IntersectionObserver' in window)) return;
+    var seen = new Set();
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { e.isIntersecting ? seen.add(e.target) : seen.delete(e.target); });
+      btn.classList.toggle('is-hidden', seen.size > 0);
+    }, { threshold: 0.05 });
+    Array.prototype.forEach.call(watch, function (el) { io.observe(el); });
   }
 
   // לוגואים: עותק שני לגלילה רציפה, מוסתר מקוראי מסך
@@ -69,9 +88,104 @@
     });
   }
 
+  var REDUCED = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // הסרטון רץ לבד בלי קול, עם כתוביות. לחיצה על "הפעלת קול" מתחילה אותו מההתחלה עם קול
+  function vsl() {
+    var frame = document.querySelector('.vsl-frame');
+    if (!frame || !VSL_SRC) return;
+    var video = frame.querySelector('video');
+    var sound = frame.querySelector('.vsl-sound');
+    video.src = VSL_SRC;
+    if (VSL_CAPTIONS) {
+      var t = document.createElement('track');
+      t.kind = 'captions'; t.srclang = 'he'; t.label = 'עברית'; t.src = VSL_CAPTIONS; t.default = true;
+      video.appendChild(t);
+    }
+    video.hidden = false;
+    frame.dataset.state = 'muted';
+    sound.hidden = false;
+    if (!REDUCED) { video.autoplay = true; video.play().catch(function () {}); }
+    sound.addEventListener('click', function () {
+      video.currentTime = 0;
+      video.muted = false;
+      video.controls = true;
+      video.play();
+      sound.hidden = true;
+      frame.dataset.state = 'playing';
+    });
+  }
+
+  // כיסא השופט והמכתב: מתחילים כשגוללים אליהם, ומשם רצים בלולאה
+  function reveals() {
+    var els = document.querySelectorAll('[data-reveal]');
+    if (!els.length) return;
+    var letter = document.querySelector('.letter');
+    if (letter && !REDUCED && 'IntersectionObserver' in window) letter.classList.add('is-waiting');
+    if (REDUCED || !('IntersectionObserver' in window)) {
+      Array.prototype.forEach.call(els, function (el) { el.classList.add('is-on'); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        io.unobserve(e.target);
+        e.target.classList.add('is-on');
+        if (e.target.classList.contains('letter')) typeLetter(e.target);
+      });
+    }, { threshold: 0.45 });
+    Array.prototype.forEach.call(els, function (el) { io.observe(el); });
+  }
+
+  // המכתב נכתב, נחתם, נשאר שלוש שניות, נמחק, ומתחיל מחדש
+  function typeLetter(letter) {
+    var body = letter.querySelector('.letter-body');
+    var text = body.getAttribute('data-type') || body.textContent;
+    (function cycle() {
+      var i = 0;
+      letter.classList.remove('is-clearing', 'is-stamped');
+      letter.classList.add('is-waiting');
+      body.textContent = '';
+      body.classList.add('is-typing');
+      (function step() {
+        i += 1;
+        body.textContent = text.slice(0, i);
+        if (i < text.length) { setTimeout(step, 32); return; }
+        body.classList.remove('is-typing');
+        setTimeout(function () {
+          letter.classList.remove('is-waiting');
+          letter.classList.add('is-stamped');
+          setTimeout(function () {
+            letter.classList.add('is-clearing');
+            setTimeout(cycle, 500);
+          }, 3000);
+        }, 350);
+      })();
+    })();
+  }
+
+  // שאלות ותשובות: נפתחות ונסגרות בהחלקה, ולא קופצות
+  function accordion() {
+    Array.prototype.forEach.call(document.querySelectorAll('.acc'), function (item) {
+      var btn = item.querySelector('.acc-q');
+      var panel = item.querySelector('.acc-panel');
+      btn.addEventListener('click', function () {
+        var open = !item.classList.contains('is-open');
+        item.classList.toggle('is-open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        panel.style.maxHeight = open ? panel.scrollHeight + 'px' : '0px';
+      });
+    });
+    // גובה התשובה משתנה עם רוחב המסך
+    window.addEventListener('resize', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.acc.is-open .acc-panel'), function (panel) {
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+      });
+    });
+  }
+
   var RULES = {
     name: function (v) { return v.trim().length >= 2; },
-    firm: function (v) { return v.trim().length >= 2; },
     phone: function (v) { return v.replace(/\D/g, '').length >= 9; },
     email: function (v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim()); },
     consent: function (v, el) { return el.checked; }
@@ -94,7 +208,7 @@
     var formErr = document.getElementById('form-err');
     form.dataset.state = state;
     btn.disabled = state === 'sending';
-    btn.textContent = state === 'sending' ? 'שולח...' : 'שליחה ובחירת מועד לשיחה';
+    btn.textContent = state === 'sending' ? 'שולח...' : 'שליחה וקביעת שיחה ביומן';
     formErr.hidden = state !== 'error';
   }
 
@@ -107,12 +221,12 @@
     if (BOOKING_URL) {
       var f = document.createElement('iframe');
       f.src = BOOKING_URL;
-      f.title = 'בחירת מועד לשיחת היכרות';
+      f.title = 'בחירת שעה לשיחה';
       f.loading = 'lazy';
       booking.appendChild(f);
       link.href = BOOKING_URL;
     } else {
-      booking.innerHTML = '<div class="booking-empty">כאן ייטען היומן לבחירת מועד</div>';
+      booking.innerHTML = '<div class="booking-empty">כאן ייטען היומן לבחירת שעה</div>';
       link.removeAttribute('target');
     }
     thanks.focus();
@@ -153,7 +267,7 @@
         showThanks(form);
       }, function () {
         setState(form, 'error');
-        document.getElementById('form-err').focus && document.getElementById('form-err').focus();
+        document.getElementById('form-err').focus();
       });
     });
   }
@@ -177,7 +291,10 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     marquee();
+    vsl();
+    reveals();
     stickyCta();
+    accordion();
     initForm();
     anchors();
   });
