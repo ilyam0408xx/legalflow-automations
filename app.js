@@ -1,4 +1,4 @@
-/* LegalFlow × Smart Scale, דף הנחיתה המשותף: הסרטון, אנימציות בגלילה, כפתור קבוע, ולידציה, ארבעת מצבי הטופס, פרמטרי מקור */
+/* LegalFlow, דף הנחיתה: הסרטון, הלוח החי, תנועה בגלילה, כפתור קבוע, ולידציה, ארבעת מצבי הטופס, פרמטרי מקור */
 (function () {
   'use strict';
 
@@ -8,6 +8,12 @@
 
   // הקישור של איליה לקביעת שיחה של 20 דקות. ריק = מוצג מקום שמור
   var BOOKING_URL = '';
+
+  // הלוח החי: הסרטון של רז מהאתר שלו. רץ רק קטע אחד, והחיתוך ב-CSS מסתיר את הכותרת עם שם המוצר.
+  // לפני שהדף עולה לקמפיין: מעתיקים עותק מקומי ומחליפים את הכתובת
+  var BOARD_SRC = 'https://legalflow.club/videos/board-demo-2.mp4';
+  var BOARD_FROM = 8.6;
+  var BOARD_TO = 11.5;
 
   // הכתובת הייעודית לדף הזה ב-CRM של איליה: כל ליד ממנה נרשם תחת רז ברכה.
   // ריק = מצב תצוגה: השליחה מצליחה אחרי רגע, ו-?demo=error מדגים שגיאה
@@ -23,7 +29,7 @@
           setTimeout(function () { fail ? reject(new Error('demo')) : resolve(); }, 900);
         });
       }
-      data.source = 'legalflow-smartscale';
+      data.source = 'legalflow-lp';
       data.partner = PARTNER.name;
       data.partnerId = PARTNER.crmId;
       return fetch(LEAD_WEBHOOK, {
@@ -37,7 +43,7 @@
   }
 
   var PARAMS = ['src', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid'];
-  var STORE_KEY = 'lf-ss-src';
+  var STORE_KEY = 'lf-src';
 
   function readStore() {
     try { return JSON.parse(sessionStorage.getItem(STORE_KEY) || '{}'); } catch (e) { return {}; }
@@ -116,52 +122,76 @@
     });
   }
 
-  // כיסא השופט והמכתב: מתחילים כשגוללים אליהם, ומשם רצים בלולאה
+  // לוגואים, טיוטה וחותמת: קורים פעם אחת כשגוללים אליהם, ונשארים
   function reveals() {
     var els = document.querySelectorAll('[data-reveal]');
     if (!els.length) return;
-    var letter = document.querySelector('.letter');
-    if (letter && !REDUCED && 'IntersectionObserver' in window) letter.classList.add('is-waiting');
     if (REDUCED || !('IntersectionObserver' in window)) {
       Array.prototype.forEach.call(els, function (el) { el.classList.add('is-on'); });
       return;
     }
+    Array.prototype.forEach.call(els, function (el) { el.classList.add('is-waiting'); });
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         if (!e.isIntersecting) return;
         io.unobserve(e.target);
+        e.target.classList.remove('is-waiting');
         e.target.classList.add('is-on');
-        if (e.target.classList.contains('letter')) typeLetter(e.target);
       });
-    }, { threshold: 0.45 });
+    }, { threshold: 0.35 });
     Array.prototype.forEach.call(els, function (el) { io.observe(el); });
   }
 
-  // המכתב נכתב, נחתם, נשאר שלוש שניות, נמחק, ומתחיל מחדש
-  function typeLetter(letter) {
-    var body = letter.querySelector('.letter-body');
-    var text = body.getAttribute('data-type') || body.textContent;
-    (function cycle() {
-      var i = 0;
-      letter.classList.remove('is-clearing', 'is-stamped');
-      letter.classList.add('is-waiting');
-      body.textContent = '';
-      body.classList.add('is-typing');
-      (function step() {
-        i += 1;
-        body.textContent = text.slice(0, i);
-        if (i < text.length) { setTimeout(step, 32); return; }
-        body.classList.remove('is-typing');
-        setTimeout(function () {
-          letter.classList.remove('is-waiting');
-          letter.classList.add('is-stamped');
-          setTimeout(function () {
-            letter.classList.add('is-clearing');
-            setTimeout(cycle, 500);
-          }, 3000);
-        }, 350);
-      })();
-    })();
+  // חלונות המשרדים: לולאה איטית, רק כשהם על המסך
+  function windows() {
+    var wins = document.querySelectorAll('.win');
+    if (REDUCED || !wins.length || !('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { e.target.classList.toggle('is-on', e.isIntersecting); });
+    }, { threshold: 0.3 });
+    Array.prototype.forEach.call(wins, function (w) { io.observe(w); });
+  }
+
+  // הלוח החי: רץ כשהוא על המסך, ונעצר כשלא. עד שהקטע מוכן, ובלי תנועה: נשארת התמונה
+  function board() {
+    var video = document.querySelector('#board video');
+    if (!video || !BOARD_SRC || REDUCED || !('IntersectionObserver' in window)) return;
+    var started = false;
+    var ready = false;
+    var visible = false;
+    function sync() {
+      if (ready && visible) video.play().catch(function () {});
+      else video.pause();
+    }
+    function start() {
+      started = true;
+      video.preload = 'auto';
+      video.addEventListener('canplay', function first() {
+        video.removeEventListener('canplay', first);
+        video.currentTime = BOARD_FROM;
+      });
+      video.addEventListener('seeked', function () {
+        ready = true;
+        video.classList.remove('is-fading');
+        sync();
+      });
+      video.addEventListener('timeupdate', function () {
+        // החזרה לתחילת הקטע בדעיכה קצרה, כדי שלא תיראה קפיצה
+        if (ready && video.currentTime >= BOARD_TO && !video.classList.contains('is-fading')) {
+          video.classList.add('is-fading');
+          setTimeout(function () { video.currentTime = BOARD_FROM; }, 260);
+        }
+      });
+      video.src = BOARD_SRC;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        visible = e.isIntersecting;
+        if (visible && !started) start();
+        sync();
+      });
+    }, { threshold: 0.2 });
+    io.observe(document.getElementById('board'));
   }
 
   // שאלות ותשובות: נפתחות ונסגרות בהחלקה, ולא קופצות
@@ -239,8 +269,10 @@
 
     Object.keys(RULES).forEach(function (name) {
       var el = form.elements[name];
-      el.addEventListener(name === 'consent' ? 'change' : 'blur', function () {
-        if (el.getAttribute('aria-invalid') !== null || el.value) validateField(form, name);
+      // שגיאה מופיעה רק בשליחה, ונעלמת תוך כדי הקלדה. בלי בדיקה ביציאה מהשדה:
+      // הודעה שנעלמת באמצע לחיצה מזיזה את הטופס, והלחיצה נופלת ליד הצ'קבוקס
+      el.addEventListener(name === 'consent' ? 'change' : 'input', function () {
+        if (el.getAttribute('aria-invalid') === 'true') validateField(form, name);
       });
     });
 
@@ -293,6 +325,8 @@
     marquee();
     vsl();
     reveals();
+    windows();
+    board();
     stickyCta();
     accordion();
     initForm();
